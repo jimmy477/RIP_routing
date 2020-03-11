@@ -1,3 +1,6 @@
+import sys
+
+
 class ConfigParser:
 
     def __init__(self, config_file):
@@ -51,20 +54,12 @@ class ConfigParser:
         pass
 
 
-
-
-
-    def split_line(self, line):
-        split = line.split()
-        identifier = split[0]
-        if identifier == 'router-id':
-            return line[1]
-        elif identifier == 'input-ports':
-            pass
-        elif identifier == 'outputs':
-            pass
-
-
 if __name__ == '__main__':
-    parser = ConfigParser('config.ascii')
-    parser.split_input_ports()
+    # 'config.ascii' is the filename for command line startup
+    try:
+        config_file = sys.argv[1]
+    except IndexError:
+        print('ERROR: No config filename was given')
+    else:
+        parser = ConfigParser(config_file)
+        parser.split_input_ports()
