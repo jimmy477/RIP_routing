@@ -1,15 +1,21 @@
+import sys
 import socket
 
 
 class ConfigParser:
     """Class that parses a configuration file for the COSC364 RIPv2 assignment"""
 
-    def __init__(self, config_file):
-        self.config_file = config_file
-        self.router_ids_line, self.input_ports_line, self.outputs_line, self.timer_line = self.read_file()
-        self.router_id = self.split_ids()
-        self.input_ports = self.split_input_ports()
-        self.outputs = self.split_outputs()
+    def __init__(self):
+        try:
+            self.config_file = sys.argv[1]
+        except IndexError:
+            print('ERROR: No config filename was given')
+            sys.exit()
+        else:
+            self.router_ids_line, self.input_ports_line, self.outputs_line, self.timer_line = self.read_file()
+            self.router_id = self.split_ids()
+            self.input_ports = self.split_input_ports()
+            self.outputs = self.split_outputs()
 
     def read_file(self):
         """Reads an ascii config file and returns the lines: router_ids, input_ports,
@@ -24,6 +30,7 @@ class ConfigParser:
                 outputs = lines[2]
             except IndexError:
                 print('CONFIG_FILE ERROR: wrong formatting')
+                sys.exit()
             else:
                 # This is true if their is a timer parameter
                 if len(lines) > 3:
@@ -41,6 +48,7 @@ class ConfigParser:
             return router_ids_split[1]
         except IndexError:
             print('CONFIG_FILE ERROR: router-id not given')
+            sys.exit()
 
     def split_input_ports(self):
         """Checks the input ports line is formatted correctly and then returns the ports as a list"""
@@ -55,6 +63,7 @@ class ConfigParser:
                 port_number = int(port)
             except ValueError:
                 print('CONFIG_FILE_ERROR: port numbers given were not numbers')
+                sys.exit()
             else:
                 if port_number < 1024 or port_number > 640000:
                     raise Exception('CONFIG_FILE ERROR: port numbers not in range 1024 - 64000')
@@ -104,6 +113,6 @@ def event_loop(router):
 
 
 if __name__ == '__main__':
-    parser = ConfigParser('config.ascii')
+    parser = ConfigParser()
     router = Router(parser.router_id, parser.input_ports, parser.outputs)
     event_loop(router)
