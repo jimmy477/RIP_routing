@@ -1,3 +1,6 @@
+import socket
+
+
 class ConfigParser:
     """Class that parses a configuration file for the COSC364 RIPv2 assignment"""
 
@@ -48,11 +51,19 @@ class ConfigParser:
             raise Exception('CONFIG_FILE ERROR: input-ports not given')
         for input_port in input_ports_split[1:]:
             port = input_port.rstrip(',')
-            ports.append(int(port))
+            try:
+                port_number = int(port)
+            except ValueError:
+                print('CONFIG_FILE_ERROR: port numbers given were not numbers')
+            else:
+                if port_number < 1024 or port_number > 640000:
+                    raise Exception('CONFIG_FILE ERROR: port numbers not in range 1024 - 64000')
+                ports.append(port_number)
         return ports
 
     def split_outputs(self):
-        """Checks the outputs line is formatted correctly and then returns the outputs as a list"""
+        """Checks the outputs line is formatted correctly and then returns the outputs as a list of tuples of the format
+           (input port num of peer router, metric to peer router, router id of peer router) """
 
         outputs = []
         outputs_split = self.outputs_line.split()
@@ -60,22 +71,39 @@ class ConfigParser:
             raise Exception('CONFIG_FILE ERROR: outputs not given')
         for input_port in outputs_split[1:]:
             output = input_port.rstrip(',')
+            output = tuple(output.split('-'))
             outputs.append(output)
         return outputs
 
     def split_timer(self):
         pass
 
-    def split_line(self, line):
-        split = line.split()
-        identifier = split[0]
-        if identifier == 'router-id':
-            return line[1]
-        elif identifier == 'input-ports':
-            pass
-        elif identifier == 'outputs':
-            pass
+
+class Router:
+
+    def __init__(self, router_id, input_ports, outputs):
+        self.router_id = router_id
+        self.input_ports = input_ports
+        self.outputs = outputs
+
+    def create_udp_sockets(self):
+        """Creates a UDP socket  for each input port given, and binds one socket to each input port"""
+
+        host = socket.gethostbyname(socket.gethostname())
+        for input_port in self.input_ports:
+            print(input_port)
+            # TODO add  error handling
+            input_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            input_socket.bind((host, input_port))
+
+
+def event_loop(router):
+    router.create_udp_sockets()
+    while True:
+        pass
 
 
 if __name__ == '__main__':
     parser = ConfigParser('config.ascii')
+    router = Router(parser.router_id, parser.input_ports, parser.outputs)
+    event_loop(router)
