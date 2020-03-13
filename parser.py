@@ -72,7 +72,7 @@ class ConfigParser:
 
     def split_outputs(self):
         """Checks the outputs line is formatted correctly and then returns the outputs as a list of tuples of the format
-           (input port num of peer router, metric to peer router, router id of peer router) """
+           (input port num of peer router, metric to peer router, router id of peer router)"""
 
         outputs = []
         outputs_split = self.outputs_line.split()
