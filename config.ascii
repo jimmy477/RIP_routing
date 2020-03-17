@@ -1,3 +1,4 @@
+#example file
 router-id 1
 input-ports 6110, 6201
 outputs 5000-1-1
