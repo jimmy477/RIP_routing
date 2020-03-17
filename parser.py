@@ -16,25 +16,36 @@ class ConfigParser:
             self.router_id = self.split_ids()
             self.input_ports = self.split_input_ports()
             self.outputs = self.split_outputs()
+            #print(self.router_ids_line, self.router_id, self.input_ports, self.outputs)
 
     def read_file(self):
         """Reads an ascii config file and returns the lines: router_ids, input_ports,
            and timer, if it exists"""
 
         timer = None
+        router_ids = None
+        input_ports = None
+        outputs = None        
         with open(self.config_file, 'r') as f:
             lines = f.readlines()
-            try:
-                router_ids = lines[0]
-                input_ports = lines[1]
-                outputs = lines[2]
-            except IndexError:
+            for line_n in lines:
+                param = line_n.split(' ')
+                if param[0] == 'router-id':
+                    router_ids = line_n
+                if param[0] == 'input-ports':
+                    input_ports = line_n
+                if param[0] == 'outputs':
+                    outputs = line_n
+                if param[0] == 'timer':
+                    timer = line_n
+            
+   
+            if router_ids is None or input_ports is None or outputs is None:
+                #checks if the parts of the ascii file have been found if not exception raised.
                 print('CONFIG_FILE ERROR: wrong formatting')
                 sys.exit()
             else:
                 # This is true if their is a timer parameter
-                if len(lines) > 3:
-                    timer = lines[3]
                 f.close()
                 return router_ids, input_ports, outputs, timer
 
@@ -55,6 +66,7 @@ class ConfigParser:
 
         ports = []
         input_ports_split = self.input_ports_line.split()
+
         if input_ports_split[0] != 'input-ports':
             raise Exception('CONFIG_FILE ERROR: input-ports not given')
         for input_port in input_ports_split[1:]:
