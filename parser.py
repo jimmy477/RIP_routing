@@ -1,3 +1,4 @@
+import select
 import sys
 import socket
 
@@ -105,26 +106,46 @@ class Router:
     def __init__(self, router_id, input_ports, outputs):
         self.router_id = router_id
         self.input_ports = input_ports
+        self.output_ports = []
         self.outputs = outputs
+        self.routing_table, self.output_ports = self.initialize_variables()
+        self.input_udp_sockets = self.create_udp_sockets()
+        self.output_udp_sockets = [self.input_udp_sockets[0]]  # Creates a list with just the first UDP socket in input_udp_sockets
+
+    def initialize_variables(self):
+        """Returns a routing table from the outputs provided in the config file and also a list of all output_ports.
+           The routing table is of the form routing_table[destination router id] = (output port, cost to destination)"""
+
+        routing_table = {}
+        output_ports = []
+        for output_port, cost, destination in self.outputs:
+            output_ports.append(output_port)
+            routing_table[destination] = (output_port, cost)
+        return routing_table, output_ports
+
 
     def create_udp_sockets(self):
-        """Creates a UDP socket  for each input port given, and binds one socket to each input port"""
+        """Returns a list of UDP sockets, one for each input port and bound to each input port"""
 
         host = socket.gethostbyname(socket.gethostname())
+        udp_sockets = []
         for input_port in self.input_ports:
-            print(input_port)
             # TODO add  error handling
             input_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             input_socket.bind((host, input_port))
+            udp_sockets.append(input_socket)
+        return udp_sockets
 
-
-def event_loop(router):
-    router.create_udp_sockets()
-    while True:
-        pass
+    def event_loop(self):
+        i = 1
+        while i < 2:
+            print("Waiting for event...")
+            readable, writable, exceptional = select.select(self.input_udp_sockets, self.output_udp_sockets, self.input_udp_sockets)
+            print(readable, writable, exceptional)
+            i += 1
 
 
 if __name__ == '__main__':
     parser = ConfigParser()
     router = Router(parser.router_id, parser.input_ports, parser.outputs)
-    event_loop(router)
+    router.event_loop()
