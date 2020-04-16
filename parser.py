@@ -1,7 +1,10 @@
+import json
 import select
 import sys
 import socket
+import time
 
+localhost = '127.0.0.1'
 
 class ConfigParser:
     """Class that parses a configuration file for the COSC364 RIPv2 assignment"""
@@ -127,12 +130,15 @@ class Router:
     def create_udp_sockets(self):
         """Returns a list of UDP sockets, one for each input port and bound to each input port"""
 
-        host = socket.gethostbyname(socket.gethostname())
+        # host = socket.gethostbyname(socket.gethostname())
         udp_sockets = []
         for input_port in self.input_ports:
             # TODO add  error handling
-            input_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            input_socket.bind((host, input_port))
+            try:
+                input_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            except socket.error as err:
+                print("SOCKET ERROR: {}".format(err))
+            input_socket.bind((localhost, input_port))
             udp_sockets.append(input_socket)
         return udp_sockets
 
@@ -141,9 +147,28 @@ class Router:
         while i < 2:
             print("Waiting for event...")
             readable, writable, exceptional = select.select(self.input_udp_sockets, self.output_udp_sockets, self.input_udp_sockets)
-            print(readable, writable, exceptional)
+            print_sockets("inputs: ", self.input_udp_sockets)
+            print_sockets("readable: ", readable)
+            print_sockets("writable: ", writable)
+            print_sockets("exceptional: ", exceptional)
+            time.sleep(1)
+            for socket in readable:
+                connection, client_address = socket.accept()  # client_address will always be localhost in this case
+
+            # for socket in writable:
+            #     update = json.dumps(self.routing_table).encode('utf-8')
+            #     print(update)
+            #     socket.sendall(update)
+
             i += 1
 
+
+def print_sockets(type, sockets):
+    """Takes a list of sockets and prints their type and port numbers"""
+    result = []
+    for socket in sockets:
+        result.append(socket.getsockname()[1])
+    print(type + str(result))
 
 if __name__ == '__main__':
     parser = ConfigParser()
