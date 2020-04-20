@@ -113,7 +113,7 @@ class Router:
         self.outputs = outputs
         self.routing_table, self.output_ports = self.initialize_variables()
         self.input_udp_sockets = self.create_udp_sockets()
-        self.output_udp_sockets = [self.input_udp_sockets[0]]  # Creates a list with just the first UDP socket in input_udp_sockets
+        self.output_udp_socket = self.input_udp_sockets[0]  # This is the socket we will use to send packets
 
     def initialize_variables(self):
         """Returns a routing table from the outputs provided in the config file and also a list of all output_ports.
@@ -137,29 +137,37 @@ class Router:
             try:
                 input_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             except socket.error as err:
-                print("SOCKET ERROR: {}".format(err))
-            input_socket.bind((localhost, input_port))
+                print(f'Error: {err}')
+            try:
+                input_socket.bind((localhost, input_port))
+            except:
+                print(f'Error: could not bind port number {input_port} to socket')
             udp_sockets.append(input_socket)
         return udp_sockets
 
     def event_loop(self):
         i = 1
-        while i < 2:
+        while i < 5:
             print("Waiting for event...")
-            readable, writable, exceptional = select.select(self.input_udp_sockets, self.output_udp_sockets, self.input_udp_sockets)
+            readable, writable, exceptional = select.select(self.input_udp_sockets, [self.output_udp_socket], self.input_udp_sockets)
             print_sockets("inputs: ", self.input_udp_sockets)
             print_sockets("readable: ", readable)
             print_sockets("writable: ", writable)
             print_sockets("exceptional: ", exceptional)
             time.sleep(1)
             for socket in readable:
-                connection, client_address = socket.accept()  # client_address will always be localhost in this case
-
-            # for socket in writable:
-            #     update = json.dumps(self.routing_table).encode('utf-8')
-            #     print(update)
-            #     socket.sendall(update)
-
+                try:
+                    msg, senders_address = socket.recvfrom(1024)
+                    senders_port = senders_address[1]
+                    print(msg, senders_port)
+                except ConnectionResetError as err:
+                    print(f'Error receiving packet: {err}')
+            for socket in writable:
+                for output_port in self.output_ports:  # Send a update packet to each connected router
+                    print(output_port)
+                    time.sleep(1)
+                    socket.sendto(bytes('hey', 'utf-8'), (localhost, int(output_port)))
+                    time.sleep(1)
             i += 1
 
 
