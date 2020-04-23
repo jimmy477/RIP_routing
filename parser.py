@@ -171,7 +171,22 @@ class Router:
         format = 'BBH'  # This is the format for the header
         rip_entries = len(packet) // 20  # This gets the number of rip entries as each entry is 20 bytes
         format += 'HHIIII' * rip_entries
-        return struct.unpack(format, packet)
+        extracted_packet = struct.unpack(format, packet)
+        header = extracted_packet[:3]
+        command = header[0]
+        version = header[1]
+        sender = header[2]  # Router id of the router that sent the packet
+        print(f'command: {command}, version: {version}, sender: {sender}')
+
+        rip_entries = extracted_packet[3:]
+        num_rip_entries = len(rip_entries) // 6
+        for i in range(num_rip_entries):
+            start_entry = i * 6
+            rip_entry = rip_entries[start_entry:start_entry + 6]
+            afi = rip_entry[0]  # Address family identifier
+            destination = rip_entry[2]
+            metric = rip_entry[5]
+            print(f'afi: {afi}, destination: {destination}, metric: {metric}')
 
 
     def event_loop(self):
@@ -189,8 +204,7 @@ class Router:
                 try:
                     msg, senders_address = socket.recvfrom(1024)
                     senders_port = senders_address[1]
-                    unpacked = self.unpack_packet(msg)
-                    print(unpacked)
+                    self.unpack_packet(msg)
                 except ConnectionResetError as err:
                     print(f'Error receiving packet: {err}')
             for socket in writable:
