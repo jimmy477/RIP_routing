@@ -181,7 +181,7 @@ class Router:
             readable, writable, exceptional = select.select(self.input_udp_sockets, [self.output_udp_socket],
                                                             self.input_udp_sockets)
             # print_sockets("inputs: ", self.input_udp_sockets)
-            # print_sockets("readable: ", readable)
+            print_sockets("readable: ", readable)
             # print_sockets("writable: ", writable)
             # print_sockets("exceptional: ", exceptional)
             time.sleep(1)
@@ -196,9 +196,9 @@ class Router:
             for socket in writable:
                 for output_port in self.output_ports:  # Send a update packet to each connected router
                     packet = self.create_packet('response')
-                    time.sleep(1)
+                    # time.sleep(1)
                     socket.sendto(packet, (localhost, int(output_port)))
-                    time.sleep(1)
+                    # time.sleep(1)
             i += 1
 
 def print_sockets(type, sockets):
