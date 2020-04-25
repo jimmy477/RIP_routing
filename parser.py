@@ -108,7 +108,15 @@ class Router:
         self.routing_table, self.output_ports = self.initialize_variables()
         self.input_udp_sockets = self.create_udp_sockets()
         self.output_udp_socket = self.input_udp_sockets[0]  # This is the socket we will use to send packets
-
+        
+    def add_to_table(self, sender):
+        
+        for output_port, cost, destination in self.outputs:
+            if str(sender) == destination:
+                self.routing_table[str(destination)] = (cost, output_port)
+            else:
+                pass
+                 
     def initialize_variables(self):
         """Returns a routing table from the outputs provided in the config file and also a list of all output_ports.
            The routing table is of the form routing_table[destination router id] = (metric, next hop)"""
@@ -116,7 +124,6 @@ class Router:
         output_ports = []
         for output_port, cost, destination in self.outputs:
             output_ports.append(output_port)
-            routing_table[destination] = (cost, output_port)
         return routing_table, output_ports
 
     def create_udp_sockets(self):
@@ -134,6 +141,7 @@ class Router:
                 print(f'Error: could not bind port number {input_port} to socket')
             udp_sockets.append(input_socket)
         return udp_sockets
+    
 
     def create_packet(self, type):
         """Creates the RIPv2 standard header taking in a parameter 'type' which is either 'request' or 'response'"""
@@ -175,8 +183,12 @@ class Router:
         header = extracted_packet[:3]
         command = header[0]
         version = header[1]
-        sender = header[2]  # Router id of the router that sent the packet
+        sender = header[2]
+        # Router id of the router that sent the packet
         print(f'command: {command}, version: {version}, sender: {sender}')
+        
+        self.add_to_table(sender)
+        
 
         rip_entries = extracted_packet[3:]
         num_rip_entries = len(rip_entries) // 6
@@ -191,7 +203,7 @@ class Router:
 
     def event_loop(self):
         i = 1
-        while i < 5:
+        while i < 60:
             print("Waiting for event...")
             readable, writable, exceptional = select.select(self.input_udp_sockets, [self.output_udp_socket],
                                                             self.input_udp_sockets)
@@ -199,6 +211,10 @@ class Router:
             print_sockets("readable: ", readable)
             # print_sockets("writable: ", writable)
             # print_sockets("exceptional: ", exceptional)
+            
+            #print(self.routing_table)
+            #print("--------------------------------------")
+            
             time.sleep(1)
             for socket in readable:
                 try:
