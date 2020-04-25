@@ -1,4 +1,5 @@
 import json
+import sched
 import select
 import struct
 import sys
@@ -106,17 +107,17 @@ class Router:
         self.output_ports = []
         self.outputs = outputs
         self.routing_table, self.output_ports = self.initialize_variables()
+        self.routing_table = {}
         self.input_udp_sockets = self.create_udp_sockets()
         self.output_udp_socket = self.input_udp_sockets[0]  # This is the socket we will use to send packets
         
     def add_to_table(self, sender):
-        
         for output_port, cost, destination in self.outputs:
             if str(sender) == destination:
                 self.routing_table[str(destination)] = (cost, output_port)
             else:
                 pass
-                 
+
     def initialize_variables(self):
         """Returns a routing table from the outputs provided in the config file and also a list of all output_ports.
            The routing table is of the form routing_table[destination router id] = (metric, next hop)"""
@@ -133,6 +134,7 @@ class Router:
             # TODO add  error handling
             try:
                 input_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                input_socket.settimeout(1)
             except socket.error as err:
                 print(f'Error: {err}')
             try:
@@ -173,8 +175,9 @@ class Router:
             print(f'Error creating packet: {error}')
         return packet
 
-    def unpack_packet(self, packet):
-        """Extracts the contents of a packet received on a input socket and returns it as a tuple of values"""
+    def unpack_packet(self, socket):
+        """Receives a packet from a socket and extracts the contents of a packet received on a input socket and returns it as a tuple of values"""
+        packet, senders_address = socket.recvfrom(1024)
         packet = bytes(packet)  # Needed in order to use struct.unpack
         format = 'BBH'  # This is the format for the header
         rip_entries = len(packet) // 20  # This gets the number of rip entries as each entry is 20 bytes
@@ -185,10 +188,10 @@ class Router:
         version = header[1]
         sender = header[2]
         # Router id of the router that sent the packet
-        print(f'command: {command}, version: {version}, sender: {sender}')
+        print(f'extracted: {extracted_packet}')
+        # print(f'command: {command}, version: {version}, sender: {sender}')
         
         self.add_to_table(sender)
-        
 
         rip_entries = extracted_packet[3:]
         num_rip_entries = len(rip_entries) // 6
@@ -198,37 +201,34 @@ class Router:
             afi = rip_entry[0]  # Address family identifier
             destination = rip_entry[2]
             metric = rip_entry[5]
-            print(f'afi: {afi}, destination: {destination}, metric: {metric}')
+            # print(f'afi: {afi}, destination: {destination}, metric: {metric}')
 
 
     def event_loop(self):
         i = 1
-        while i < 60:
+        scheduler = sched.scheduler(time.time, time.sleep)
+        while i < 5:
             print("Waiting for event...")
             readable, writable, exceptional = select.select(self.input_udp_sockets, [self.output_udp_socket],
                                                             self.input_udp_sockets)
             # print_sockets("inputs: ", self.input_udp_sockets)
-            print_sockets("readable: ", readable)
+            # print_sockets("readable: ", readable)
             # print_sockets("writable: ", writable)
             # print_sockets("exceptional: ", exceptional)
             
-            #print(self.routing_table)
-            #print("--------------------------------------")
-            
+            print(self.routing_table)
+
             time.sleep(1)
             for socket in readable:
                 try:
-                    msg, senders_address = socket.recvfrom(1024)
-                    senders_port = senders_address[1]
-                    self.unpack_packet(msg)
+                    self.unpack_packet(socket)
                 except ConnectionResetError as err:
                     print(f'Error receiving packet: {err}')
             for socket in writable:
                 for output_port in self.output_ports:  # Send a update packet to each connected router
                     packet = self.create_packet('response')
-                    # time.sleep(1)
-                    socket.sendto(packet, (localhost, int(output_port)))
-                    # time.sleep(1)
+                    scheduler.enter(5, 1, socket.sendto, (packet, (localhost, int(output_port))))
+                    scheduler.run()
             i += 1
 
 def print_sockets(type, sockets):
