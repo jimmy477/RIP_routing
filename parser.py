@@ -111,7 +111,6 @@ class Router:
         self.input_udp_sockets = self.create_udp_sockets()
         self.output_udp_socket = self.input_udp_sockets[0]  # This is the socket we will use to send packets
 
-        
     def add_to_table(self, sender):
         for output_port, cost, destination in self.outputs:
             if str(sender) == destination:
@@ -144,7 +143,6 @@ class Router:
                 print(f'Error: could not bind port number {input_port} to socket')
             udp_sockets.append(input_socket)
         return udp_sockets
-    
 
     def create_packet(self, type):
         """Creates the RIPv2 standard header taking in a parameter 'type' which is either 'request' or 'response'"""
@@ -180,6 +178,7 @@ class Router:
         """Receives a packet from a socket and extracts the contents of a packet received on a input socket and
         returns it as a tuple of values """
         packet, senders_address = socket.recvfrom(1024)
+        print(f'Received packet from {senders_address[1]}')
         packet = bytes(packet)  # Needed in order to use struct.unpack
         format = 'BBH'  # This is the format for the header
         rip_entries = len(packet) // 20  # This gets the number of rip entries as each entry is 20 bytes
@@ -190,7 +189,6 @@ class Router:
         version = header[1]
         sender = header[2]
         # Router id of the router that sent the packet
-        print(f'extracted: {extracted_packet}')
         # print(f'command: {command}, version: {version}, sender: {sender}')
         self.add_to_table(sender)
         rip_entries = extracted_packet[3:]
@@ -206,14 +204,15 @@ class Router:
     def send_update_packets(self, socket):
         packet = self.create_packet('response')
         for output_port in self.output_ports:  # Send a update packet to each connected router
-            print(output_port)
             socket.sendto(packet, (localhost, int(output_port)))
+        print(f'Sent update packets to {self.output_ports}')
 
     def event_loop(self):
         i = 1
         scheduler = sched.scheduler(time.time, time.sleep)
         while i < 5:
-            print("Waiting for event...")
+            print("\nWaiting for event...")
+            print(f'Routing table: {self.routing_table}')
             readable, writable, exceptional = select.select(self.input_udp_sockets, [self.output_udp_socket],
                                                             self.input_udp_sockets)
             # print_sockets("inputs: ", self.input_udp_sockets)
@@ -221,11 +220,8 @@ class Router:
             # print_sockets("writable: ", writable)
             # print_sockets("exceptional: ", exceptional)
             
-            print(self.routing_table)
 
-            time.sleep(1)
             for socket in readable:
-                print(f'readable:  {socket.getsockname()[1]}')
                 try:
                     self.unpack_packet(socket)
                 except ConnectionResetError as err:
@@ -234,14 +230,6 @@ class Router:
                 scheduler.enter(5, 1, self.send_update_packets, [socket])
                 scheduler.run()
             i += 1
-
-
-def print_sockets(type, sockets):
-    """Takes a list of sockets and prints their type and port numbers"""
-    result = []
-    for socket in sockets:
-        result.append(socket.getsockname()[1])
-    print(type + str(result))
 
 
 if __name__ == '__main__':
