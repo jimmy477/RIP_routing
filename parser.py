@@ -1,4 +1,5 @@
-import json
+import random
+import threading
 import sched
 import select
 import struct
@@ -11,6 +12,7 @@ localhost = '127.0.0.1'
 
 class ConfigParser:
     """Class that parses a configuration file for the COSC364 RIPv2 assignment"""
+
     def __init__(self):
         try:
             self.config_file = sys.argv[1]
@@ -92,7 +94,7 @@ class ConfigParser:
         for input_port in outputs_split[1:]:
             output = input_port.rstrip(',')
             output = tuple(output.split('-'))
-            outputs.append(output)
+            outputs.append([int(i) for i in output])
         return outputs
 
     def split_timer(self):
@@ -102,6 +104,7 @@ class ConfigParser:
 class Router:
 
     def __init__(self, router_id, input_ports, outputs):
+        self.state = 'START'
         self.router_id = int(router_id)
         self.input_ports = input_ports
         self.output_ports = []
@@ -110,13 +113,6 @@ class Router:
         self.routing_table = {}
         self.input_udp_sockets = self.create_udp_sockets()
         self.output_udp_socket = self.input_udp_sockets[0]  # This is the socket we will use to send packets
-
-    def add_to_table(self, sender):
-        for output_port, cost, destination in self.outputs:
-            if str(sender) == destination:
-                self.routing_table[str(destination)] = (cost, output_port)
-            else:
-                pass
 
     def initialize_variables(self):
         """Returns a routing table from the outputs provided in the config file and also a list of all output_ports.
@@ -144,16 +140,12 @@ class Router:
             udp_sockets.append(input_socket)
         return udp_sockets
 
-    def create_packet(self, type):
-        """Creates the RIPv2 standard header taking in a parameter 'type' which is either 'request' or 'response'"""
-        if type == 'request':
-            command = 1
-        if type == 'response':
-            command = 2
+    def create_packet(self):
+        """Creates the RIPv2 response containing a header and the rip entries of its own routing table'"""
         try:
             header = struct.pack(
                 'BBH',  # Specifies two unsigned ints of one byte each and one unsigned int of two bytes
-                command,
+                2,  # Specifies the command number (response)
                 2,  # Specifies the version number
                 self.router_id
             )
@@ -174,6 +166,33 @@ class Router:
             print(f'Error creating packet: {error}')
         return packet
 
+    def add_to_table(self, packet):
+        sender = packet[2]
+        for output_port, cost, destination in self.outputs:
+            if sender == destination:
+                self.routing_table[destination] = (cost, output_port)
+            else:
+                pass
+        # TODO check rip entries with current and update accordingly
+        rip_entries = packet[3:]  # Removes header
+        num_rip_entries = len(rip_entries) // 6
+        for i in range(num_rip_entries):
+            start_entry = i * 6
+            rip_entry = rip_entries[start_entry:start_entry + 6]
+            destination = rip_entry[2]
+            metric = rip_entry[5]
+            if destination != self.router_id:
+                next_hop = self.routing_table[sender][1]
+                total_metric = self.routing_table[sender][0] + metric
+                if destination in self.routing_table:
+                    if total_metric < self.routing_table[destination][0]:
+                        self.routing_table[destination] = (total_metric, next_hop)
+                    elif metric == 16 and self.routing_table[destination][1] == sender:
+                        self.routing_table[destination] = (metric, next_hop)
+                        # TODO start timeout timer
+                else:
+                    self.routing_table[destination] = (total_metric, next_hop)  # TODO check if metric if 16
+
     def unpack_packet(self, socket):
         """Receives a packet from a socket and extracts the contents of a packet received on a input socket and
         returns it as a tuple of values """
@@ -184,56 +203,76 @@ class Router:
         rip_entries = len(packet) // 20  # This gets the number of rip entries as each entry is 20 bytes
         format += 'HHIIII' * rip_entries
         extracted_packet = struct.unpack(format, packet)
-        header = extracted_packet[:3]
+        valid = self.check_packet(extracted_packet)
+        if not valid:
+            return
+        self.add_to_table(extracted_packet)
+
+    def check_packet(self, packet):
+        """Checks if a packet is valid, return true if it is, otherwise false"""
+        header = packet[:3]
         command = header[0]
         version = header[1]
         sender = header[2]
-        # Router id of the router that sent the packet
-        # print(f'command: {command}, version: {version}, sender: {sender}')
-        self.add_to_table(sender)
-        rip_entries = extracted_packet[3:]
+        if version != 2 or command != 2 or sender not in range(1, 64001):  # We do not implement command = 1 (request msgs)
+            print('Packet dropped: invalid header')
+            return False
+        rip_entries = packet[3:]  # Removes header
         num_rip_entries = len(rip_entries) // 6
         for i in range(num_rip_entries):
             start_entry = i * 6
             rip_entry = rip_entries[start_entry:start_entry + 6]
             afi = rip_entry[0]  # Address family identifier
+            zero1 = rip_entry[1]
             destination = rip_entry[2]
+            zero2 = rip_entry[3]
+            zero3 = rip_entry[4]
             metric = rip_entry[5]
-            # print(f'afi: {afi}, destination: {destination}, metric: {metric}')
+            if afi != 2 or zero1 != 0 or destination not in range(1, 64001) or zero2 != 0 or zero3 != 0 or metric < 0:
+                print('Packet dropped: invalid rip entry')
+                return False
+        return True
 
     def send_update_packets(self, socket):
-        packet = self.create_packet('response')
+        # TODO implement poisoned reverse, don't send a rip entry to a router the entry was learned from
+        packet = self.create_packet()
         for output_port in self.output_ports:  # Send a update packet to each connected router
             socket.sendto(packet, (localhost, int(output_port)))
         print(f'Sent update packets to {self.output_ports}')
+        wait_time = random.uniform(0.8, 1.2) * 30  # Creates a random wait time around 30secs
+        # time.sleep(wait_time)
+        time.sleep(5)  # Temporary for debugging
+        self.send_update_packets(socket)
 
     def event_loop(self):
         i = 1
-        scheduler = sched.scheduler(time.time, time.sleep)
-        while i < 5:
-            print("\nWaiting for event...")
-            print(f'Routing table: {self.routing_table}')
+        while True:
+            # print("\nWaiting for event...")
             readable, writable, exceptional = select.select(self.input_udp_sockets, [self.output_udp_socket],
                                                             self.input_udp_sockets)
             # print_sockets("inputs: ", self.input_udp_sockets)
             # print_sockets("readable: ", readable)
             # print_sockets("writable: ", writable)
             # print_sockets("exceptional: ", exceptional)
-            
 
             for socket in readable:
                 try:
                     self.unpack_packet(socket)
+                    print(f'Routing table: {self.routing_table}')
                 except ConnectionResetError as err:
                     print(f'Error receiving packet: {err}')
             for socket in writable:
-                scheduler.enter(5, 1, self.send_update_packets, [socket])
-                scheduler.run()
+                if self.state == 'START':
+                    update_thread = threading.Thread(target=self.send_update_packets,
+                                                     args=[socket],
+                                                     daemon=True)
+                    update_thread.start()
+                    self.state= 'NEXT'
+            # time.sleep(10)
             i += 1
 
 
 if __name__ == '__main__':
     parser = ConfigParser()
     router = Router(parser.router_id, parser.input_ports, parser.outputs)
-    # router.create_packet('request')
     router.event_loop()
