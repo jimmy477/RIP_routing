@@ -24,6 +24,7 @@ class ConfigParser:
             self.router_id = self.split_ids()
             self.input_ports = self.split_input_ports()
             self.outputs = self.split_outputs()
+            self.timers = self.split_timers()
 
     def read_file(self):
         """Reads an ascii config file and returns the lines: router_ids, input_ports,
@@ -42,8 +43,8 @@ class ConfigParser:
                     input_ports = line_n
                 if param[0] == 'outputs':
                     outputs = line_n
-                if param[0] == 'timer':
-                    timer = line_n
+                if param[0] == 'timers':
+                    timers = line_n
             if router_ids is None or input_ports is None or outputs is None:
                 # checks if the parts of the ascii file have been found if not exception raised.
                 print('CONFIG_FILE ERROR: wrong formatting')
@@ -51,7 +52,7 @@ class ConfigParser:
             else:
                 # This is true if their is a timer parameter
                 f.close()
-                return router_ids, input_ports, outputs, timer
+                return router_ids, input_ports, outputs, timers
 
     def split_ids(self):
         """Checks the router id line is formatted correctly and then returns the router id number"""
@@ -91,19 +92,32 @@ class ConfigParser:
         outputs_split = self.outputs_line.split()
         if outputs_split[0] != 'outputs':
             raise Exception('CONFIG_FILE ERROR: outputs not given')
+        if len(outputs_split) < 2:
+            raise Exception("CONFIG FILE ERROR: no outputs given")
         for input_port in outputs_split[1:]:
             output = input_port.rstrip(',')
             output = tuple(output.split('-'))
             outputs.append([int(i) for i in output])
         return outputs
 
-    def split_timer(self):
-        pass
+    def split_timers(self):
+        if self.timer_line is None:
+            return None
+        else:
+            timer_split = self.timer_line.split()
+            if timer_split[0] != 'timers':
+                raise Exception('CONFIG FILE ERROR: error with timers line')
+            if len(timer_split) < 4:
+                raise Exception('CONFIG FILE ERROR: not enough timers given')
+            period = int(timer_split[1].rstrip(','))
+            timeout = int(timer_split[2].rstrip(','))
+            garbage_collection = int(timer_split[3].rstrip(','))
+            return period, timeout, garbage_collection
 
 
 class Router:
 
-    def __init__(self, router_id, input_ports, outputs):
+    def __init__(self, router_id, input_ports, outputs, timers):
         self.state = 'START'
         self.router_id = int(router_id)
         self.input_ports = input_ports
@@ -112,6 +126,15 @@ class Router:
         self.routing_table = {}
         self.input_udp_sockets = self.create_udp_sockets()
         self.output_udp_socket = self.input_udp_sockets[0]  # This is the socket we will use to send packets
+        if timers is None:
+            self.period = 30
+            self.timeout = 180
+            self.garbage_collection = 180
+        else:
+            self.period = timers[0]
+            self.timeout = timers[1]
+            self.garbage_collection = timers[2]
+        self.timers = {}  # Dictionary used to store timeout and garbage collection timer threads
 
     def create_udp_sockets(self):
         """Returns a list of UDP sockets, one for each input port and bound to each input port"""
@@ -146,17 +169,45 @@ class Router:
             metric = rip_entry[5]
             next_hop = self.routing_table[sender][1]  # Next hop router_id
             total_metric = self.routing_table[sender][0] + metric
-            # TODO start timeout timer whenever the routing table is updated
             if destination in self.routing_table:
                 if total_metric < self.routing_table[destination][0]:
                     self.routing_table[destination] = (total_metric, next_hop)
-                elif metric == 16 and self.routing_table[destination][1] == sender:  # Next hop is the sender
+                    self.set_timeout(destination, False)
+                elif metric == 16 and self.routing_table[destination][1] == sender:
                     self.routing_table[destination] = (metric, next_hop)
+                    self.set_timeout(destination, False)
                     self.send_packet(self.output_udp_socket[0], True)  # Send triggered update
-                    # TODO triggered update for new unreachable route
-                    # TODO start garbage collection timer probably as there own threads
             else:
-                self.routing_table[destination] = (total_metric, next_hop)  # TODO check if metric if 16
+                if metric == 16:
+                    pass  # TODO implement
+                else:
+                    self.routing_table[destination] = (total_metric, next_hop)
+                    self.set_timeout(destination)
+
+    def set_timeout(self, destination, new=True):
+        """Cancels any timeouts already running for the given destination and sets the Timeout timer for the associated
+        destination in the routing table and adds it to the timers dictionary of threads"""
+        if not new:  # Then there is already timers running for these destinations so we must stop them
+            self.timers["Timeout " + str(destination)].cancel()
+            self.timers["Garbage " + str(destination)].cancel()
+        timeout_thread = threading.Timer(self.timeout, self.timeout_function, args=[destination])
+        self.timers["Timeout " + str(destination)] = timeout_thread
+        timeout_thread.start()
+
+    def timeout_function(self, destination):
+        """Sets the metric for the destination in the routing table to 16 as the timeout timer has exceeded
+        and assumes the route to destination is broken"""
+        self.routing_table[destination] = (16, self.routing_table[destination][1])
+        print(f'timeout {self.routing_table}')
+        garbage_thread = threading.Timer(self.garbage_collection, self.garbage_collection_function, args=[destination])
+        self.timers["Garbage " + str(destination)] = garbage_thread
+        garbage_thread.start()
+        self.send_packet(self.output_udp_socket, True)  # Send triggered update as is unreachable
+
+    def garbage_collection_function(self, destination):
+        """Deletes the given destination route from the routing table"""
+        del self.routing_table[destination]
+        print(f'garbage {self.routing_table}')
 
     def unpack_packet(self, socket):
         """Receives a packet from a socket and extracts the contents of a packet received on a input socket and
@@ -218,16 +269,17 @@ class Router:
             packet = header
             for destination, values in self.routing_table.items():
                 metric, next_hop = values
-                if next_hop != output_id:  # Does not send entries to router if it learnt it from this router
-                    packet = packet + struct.pack(
-                        'HHIIII',  # Specifies two unsigned ints of 2 bytes each and 4 unsigned ints of 4 bytes each
-                        2,  # Address family identifier AF_INET
-                        0,
-                        int(destination),
-                        0,
-                        0,
-                        int(metric)
-                    )
+                if next_hop == output_id:  # Impliments split horizon with poisoned reverse
+                    metric = 16
+                packet = packet + struct.pack(
+                    'HHIIII',  # Specifies two unsigned ints of 2 bytes each and 4 unsigned ints of 4 bytes each
+                    2,  # Address family identifier AF_INET
+                    0,
+                    int(destination),
+                    0,
+                    0,
+                    int(metric)
+                )
         except struct.error as error:
             print(f'Error creating packet: {error}')
         return packet
@@ -235,29 +287,26 @@ class Router:
     def send_packet(self, socket, triggered=False):
         """Sends an update packet to all neighbours, if triggered is true then only send once"""
         #TODO Test poisoned reversed is working.
+        #TODO Test triggered update when metric set to 16
         for output_port, _, _ in self.outputs:  # Send a update packet to each connected router
             packet = self.create_packet(output_port)
             socket.sendto(packet, (localhost, int(output_port)))
         if triggered:
             print(f'Sent triggered update packets to {self.outputs}')
         else:
-            print(f'Sent update packets to {self.outputs}')
-            wait_time = random.uniform(0.8, 1.2) * 30  # Creates a random wait time around 30secs
+            print(f'Sent update packets to {self.outputs}\n')
+            wait_time = random.uniform(0.8, 1.2) * self.period  # Creates a random wait time around 30secs
             time.sleep(wait_time)
-            time.sleep(5)  # Temporary for debugging
             self.send_packet(socket)
 
     def event_loop(self):
-        i = 1
         while True:
-            # print("\nWaiting for event...")
             readable, writable, exceptional = select.select(self.input_udp_sockets, [self.output_udp_socket],
                                                             self.input_udp_sockets)
             # print_sockets("inputs: ", self.input_udp_sockets)
             # print_sockets("readable: ", readable)
             # print_sockets("writable: ", writable)
             # print_sockets("exceptional: ", exceptional)
-
             for socket in readable:
                 try:
                     self.unpack_packet(socket)
@@ -271,13 +320,12 @@ class Router:
                                                      daemon=True)
                     update_thread.start()
                     self.state = 'NEXT'
-            # time.sleep(10)
-            i += 1
 
 
 if __name__ == '__main__':
     parser = ConfigParser()
-    router = Router(parser.router_id, parser.input_ports, parser.outputs)
+    router = Router(parser.router_id, parser.input_ports, parser.outputs, parser.timers)
     # print(router.outputs, router.output_ports)
     # print(router.outputs)
     router.event_loop()
+    # router.event_loop()
