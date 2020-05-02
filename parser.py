@@ -6,6 +6,7 @@ import struct
 import sys
 import socket
 import time
+from datetime import datetime
 
 localhost = '127.0.0.1'
 
@@ -158,6 +159,7 @@ class Router:
         for _, cost, destination in self.outputs:
             if sender == destination:
                 self.routing_table[destination] = (cost, sender)
+                self.set_timeout(destination)
             else:
                 pass
         rip_entries = packet[3:]  # Removes header
@@ -172,10 +174,10 @@ class Router:
             if destination in self.routing_table:
                 if total_metric < self.routing_table[destination][0]:
                     self.routing_table[destination] = (total_metric, next_hop)
-                    self.set_timeout(destination, False)
+                    self.set_timeout(destination)
                 elif metric == 16 and self.routing_table[destination][1] == sender:
                     self.routing_table[destination] = (metric, next_hop)
-                    self.set_timeout(destination, False)
+                    self.set_timeout(destination)
                     self.send_packet(self.output_udp_socket[0], True)  # Send triggered update
             else:
                 if metric == 16:
@@ -184,15 +186,17 @@ class Router:
                     self.routing_table[destination] = (total_metric, next_hop)
                     self.set_timeout(destination)
 
-    def set_timeout(self, destination, new=True):
+    def set_timeout(self, destination):
         """Cancels any timeouts already running for the given destination and sets the Timeout timer for the associated
         destination in the routing table and adds it to the timers dictionary of threads"""
-        if not new:  # Then there is already timers running for these destinations so we must stop them
+        if 'Timeout ' + str(destination) in self.timers.keys():
             self.timers["Timeout " + str(destination)].cancel()
+        if 'Garbage ' + str(destination) in self.timers.keys():
             self.timers["Garbage " + str(destination)].cancel()
         timeout_thread = threading.Timer(self.timeout, self.timeout_function, args=[destination])
         self.timers["Timeout " + str(destination)] = timeout_thread
         timeout_thread.start()
+        # print(f'started timeout at {datetime.now().time()}')
 
     def timeout_function(self, destination):
         """Sets the metric for the destination in the routing table to 16 as the timeout timer has exceeded
@@ -299,33 +303,40 @@ class Router:
             time.sleep(wait_time)
             self.send_packet(socket)
 
+    def close_threads(self):
+        """Cancels all running threads"""
+        for thread in self.timers.values():
+            thread.cancel()
+
     def event_loop(self):
-        while True:
-            readable, writable, exceptional = select.select(self.input_udp_sockets, [self.output_udp_socket],
-                                                            self.input_udp_sockets)
-            # print_sockets("inputs: ", self.input_udp_sockets)
-            # print_sockets("readable: ", readable)
-            # print_sockets("writable: ", writable)
-            # print_sockets("exceptional: ", exceptional)
-            for socket in readable:
-                try:
-                    self.unpack_packet(socket)
-                    print(f'Routing table: {self.routing_table}')
-                except ConnectionResetError as err:
-                    print(f'Error receiving packet: {err}')
-            for socket in writable:
-                if self.state == 'START':
-                    update_thread = threading.Thread(target=self.send_packet,
-                                                     args=[socket],
-                                                     daemon=True)
-                    update_thread.start()
-                    self.state = 'NEXT'
+        try:
+            while True:
+                readable, writable, exceptional = select.select(self.input_udp_sockets, [self.output_udp_socket],
+                                                                self.input_udp_sockets)
+                # print_sockets("inputs: ", self.input_udp_sockets)
+                # print_sockets("readable: ", readable)
+                # print_sockets("writable: ", writable)
+                # print_sockets("exceptional: ", exceptional)
+                for socket in readable:
+                    try:
+                        self.unpack_packet(socket)
+                        print(f'Routing table: {self.routing_table}')
+                    except ConnectionResetError as err:
+                        print(f'Error receiving packet: {err}')
+                for socket in writable:
+                    if self.state == 'START':
+                        update_thread = threading.Thread(target=self.send_packet,
+                                                         args=[socket],
+                                                         daemon=True)
+                        update_thread.start()
+                        self.state = 'NEXT'
+        except (KeyboardInterrupt):
+            self.close_threads()
+
 
 
 if __name__ == '__main__':
     parser = ConfigParser()
     router = Router(parser.router_id, parser.input_ports, parser.outputs, parser.timers)
-    # print(router.outputs, router.output_ports)
-    # print(router.outputs)
+    # print(router.timeout, router.garbage_collection)
     router.event_loop()
-    # router.event_loop()
