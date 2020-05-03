@@ -1,0 +1,4 @@
+router_id 5
+input-ports 5000
+outputs 4002-1-4
+timers 5, 10, 7

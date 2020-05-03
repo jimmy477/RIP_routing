@@ -1,0 +1,4 @@
+router_id 2
+input-ports 2000, 2001, 2002
+outputs 1024-1-1, 3001-1-3, 4001-1-4
+timers 5, 10, 7

@@ -1,0 +1,4 @@
+router_id 4
+input-ports 4000, 4001, 4002
+outputs 3002-10-3, 2001-1-2, 5000-1-5
+timers 5, 10, 7
