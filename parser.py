@@ -1,6 +1,5 @@
 import random
 import threading
-import sched
 import select
 import struct
 import sys
@@ -9,7 +8,6 @@ import time
 from datetime import datetime
 
 localhost = '127.0.0.1'
-
 
 class ConfigParser:
     """Class that parses a configuration file for the COSC364 RIPv2 assignment"""
@@ -110,6 +108,7 @@ class ConfigParser:
                 if len(output) != 3:
                     raise SyntaxError('outputs syntax invalid')
                 output = (int(output[0]), int(output[1]), int(output[2]))
+                outputs.append(output)
         except ValueError as err:
             print('CONFIG_FILE ERROR: ' + str(err))
             sys.exit()
@@ -119,7 +118,6 @@ class ConfigParser:
         except IndexError:
             print('CONFIG_FILE ERROR: not enough outputs given')
         else:
-            outputs.append(output)
             return outputs
 
     def split_timers(self):
@@ -165,7 +163,6 @@ class Router:
         """Returns a list of UDP sockets, one for each input port and bound to each input port"""
         udp_sockets = []
         for input_port in self.input_ports:
-            # TODO add error handling
             try:
                 input_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 input_socket.setblocking(False)
@@ -202,10 +199,12 @@ class Router:
                 elif metric == 16 and self.routing_table[destination][1] == sender:
                     self.routing_table[destination] = (metric, next_hop)
                     self.set_timeout(destination)
-                    self.send_packet(self.output_udp_socket[0], True)  # Send triggered update
+                    self.send_packet(self.output_udp_socket, True)  # Send triggered update
             else:
-                if metric == 16:
-                    pass  # TODO implement
+                if metric == 16:  # TODO Check this is the correct thing to do
+                    self.routing_table[destination] = (metric, next_hop)
+                    self.set_timeout(destination)
+                    self.send_packet(self.output_udp_socket, True)  # Send triggered update
                 else:
                     self.routing_table[destination] = (total_metric, next_hop)
                     self.set_timeout(destination)
@@ -337,10 +336,6 @@ class Router:
             while True:
                 readable, writable, exceptional = select.select(self.input_udp_sockets, [self.output_udp_socket],
                                                                 self.input_udp_sockets)
-                # print_sockets("inputs: ", self.input_udp_sockets)
-                # print_sockets("readable: ", readable)
-                # print_sockets("writable: ", writable)
-                # print_sockets("exceptional: ", exceptional)
                 for socket in readable:
                     try:
                         self.unpack_packet(socket)
@@ -354,7 +349,7 @@ class Router:
                                                          daemon=True)
                         update_thread.start()
                         self.state = 'NEXT'
-        except (KeyboardInterrupt):
+        except KeyboardInterrupt:
             self.close_threads()
 
 

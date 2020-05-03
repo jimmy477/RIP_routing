@@ -1,4 +1,4 @@
-router_id 3
+router-id 3
 input-ports 3000, 3001, 3002
 outputs 1025-1-1, 2001-1-2, 4000-10-4
 timers 5, 10, 7
