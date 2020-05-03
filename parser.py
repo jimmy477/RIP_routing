@@ -27,103 +27,128 @@ class ConfigParser:
             self.outputs = self.split_outputs()
             self.timers = self.split_timers()
 
+    def __repr__(self):
+        return f'Router id: {self.router_id}\n' \
+               f'Input ports: {self.input_ports}\n' \
+               f'Outputs: {self.outputs}\n' \
+               f'Timers: {self.timers}'
+
     def read_file(self):
         """Reads an ascii config file and returns the lines: router_ids, input_ports,
            and timer, if it exists"""
-        timer = None
-        router_ids = None
-        input_ports = None
-        outputs = None
-        with open(self.config_file, 'r') as f:
-            lines = f.readlines()
-            for line_n in lines:
-                param = line_n.split(' ')
-                if param[0] == 'router-id':
-                    router_ids = line_n
-                if param[0] == 'input-ports':
-                    input_ports = line_n
-                if param[0] == 'outputs':
-                    outputs = line_n
-                if param[0] == 'timers':
-                    timers = line_n
-            if router_ids is None or input_ports is None or outputs is None:
-                # checks if the parts of the ascii file have been found if not exception raised.
-                print('CONFIG_FILE ERROR: wrong formatting')
-                sys.exit()
-            else:
-                # This is true if their is a timer parameter
-                f.close()
+        timers = None
+        try:
+            with open(self.config_file, 'r') as f:
+                lines = f.readlines()
+                router_ids = lines[0]
+                input_ports = lines[1]
+                outputs = lines[2]
+                if len(lines) == 4:
+                    timers = lines[3]
+                if len(lines) > 4:
+                    raise SyntaxError('too many lines in config file')
                 return router_ids, input_ports, outputs, timers
+        except IndexError:
+            print('CONFIG_FILE ERROR: config file syntax is wrong')
+            sys.exit()
+        except SyntaxError as err:
+            print('CONFIG_FILE ERROR: ' + str(err))
+            sys.exit()
 
     def split_ids(self):
         """Checks the router id line is formatted correctly and then returns the router id number"""
         router_ids_split = self.router_ids_line.split()
-        if router_ids_split[0] != 'router-id':
-            raise Exception('CONFIG_FILE ERROR: router-id not given')
         try:
-            return router_ids_split[1]
+            if router_ids_split[0] != 'router-id':
+                raise SyntaxError('router-ids not given')
+            if len(router_ids_split) > 2:
+                raise SyntaxError('too many router-ids given')
+            return int(router_ids_split[1])
         except IndexError:
-            print('CONFIG_FILE ERROR: router-id not given')
+            print('CONFIG_FILE ERROR: router id not given')
+            sys.exit()
+        except SyntaxError as err:
+            print('CONFIG_FILE ERROR: ' + str(err))
+            sys.exit()
+        except ValueError:
+            print('CONFIG_FILE ERROR: router-id given is not an int')
             sys.exit()
 
     def split_input_ports(self):
         """Checks the input ports line is formatted correctly and then returns the ports as a list"""
         ports = []
         input_ports_split = self.input_ports_line.split()
-
-        if input_ports_split[0] != 'input-ports':
-            raise Exception('CONFIG_FILE ERROR: input-ports not given')
-        for input_port in input_ports_split[1:]:
-            port = input_port.rstrip(',')
-            try:
+        try:
+            if input_ports_split[0] != 'input-ports' or len(input_ports_split) < 2:
+                raise SyntaxError('input-ports not given')
+            for input_port in input_ports_split[1:]:
+                port = input_port.rstrip(',')
                 port_number = int(port)
-            except ValueError:
-                print('CONFIG_FILE_ERROR: port numbers given were not numbers')
-                sys.exit()
-            else:
                 if port_number < 1024 or port_number > 640000:
-                    raise Exception('CONFIG_FILE ERROR: port numbers not in range 1024 - 64000')
+                    raise ValueError('port numbers not in range 1024 - 64000')
                 ports.append(port_number)
-        return ports
+        except ValueError as err:
+            print('CONFIG_FILE_ERROR: ' + str(err))
+            sys.exit()
+        except SyntaxError as err:
+            print('CONFIG_FILE_ERROR: ' + str(err))
+            sys.exit()
+        else:
+            return ports
 
     def split_outputs(self):
         """Checks the outputs line is formatted correctly and then returns the outputs as a list of tuples of the format
            (input port num of peer router, metric to peer router, router id of peer router)"""
         outputs = []
         outputs_split = self.outputs_line.split()
-        if outputs_split[0] != 'outputs':
-            raise Exception('CONFIG_FILE ERROR: outputs not given')
-        if len(outputs_split) < 2:
-            raise Exception("CONFIG FILE ERROR: no outputs given")
-        for input_port in outputs_split[1:]:
-            output = input_port.rstrip(',')
-            output = tuple(output.split('-'))
-            outputs.append([int(i) for i in output])
-        return outputs
+        try:
+            if outputs_split[0] != 'outputs' or len(outputs_split) < 2:
+                raise SyntaxError('outputs not given')
+            for input_port in outputs_split[1:]:
+                output = input_port.rstrip(',')
+                output = tuple(output.split('-'))
+                if len(output) != 3:
+                    raise SyntaxError('outputs syntax invalid')
+                output = (int(output[0]), int(output[1]), int(output[2]))
+        except ValueError as err:
+            print('CONFIG_FILE ERROR: ' + str(err))
+            sys.exit()
+        except SyntaxError as err:
+            print('CONFIG_FILE ERROR: ' + str(err))
+            sys.exit()
+        except IndexError:
+            print('CONFIG_FILE ERROR: not enough outputs given')
+        else:
+            outputs.append(output)
+            return outputs
 
     def split_timers(self):
+        """Splits the timers into period, timeout and garbage collection variables respectively.
+        Returns None if no timers given"""
         if self.timer_line is None:
             return None
         else:
-            timer_split = self.timer_line.split()
-            if timer_split[0] != 'timers':
-                raise Exception('CONFIG FILE ERROR: error with timers line')
-            if len(timer_split) < 4:
-                raise Exception('CONFIG FILE ERROR: not enough timers given')
-            period = int(timer_split[1].rstrip(','))
-            timeout = int(timer_split[2].rstrip(','))
-            garbage_collection = int(timer_split[3].rstrip(','))
-            return period, timeout, garbage_collection
+            try:
+                timer_split = self.timer_line.split()
+                if timer_split[0] != 'timers' or len(timer_split) < 4:
+                    raise SyntaxError('not enough timers given')
+                print('length', len(timer_split))
+                period = int(timer_split[1].rstrip(','))
+                timeout = int(timer_split[2].rstrip(','))
+                garbage_collection = int(timer_split[3].rstrip(','))
+                return period, timeout, garbage_collection
+            except SyntaxError as err:
+                print('CONFIG_FILE ERROR: ' + str(err))
+                sys.exit()
 
 
 class Router:
 
     def __init__(self, router_id, input_ports, outputs, timers):
         self.state = 'START'
-        self.router_id = int(router_id)
+        self.router_id = router_id
         self.input_ports = input_ports
         self.outputs = outputs
-        self.output_ports = [(port, router_id) for port, _, router_id in outputs]  # Creates a list of output ports
         self.routing_table = {}
         self.input_udp_sockets = self.create_udp_sockets()
         self.output_udp_socket = self.input_udp_sockets[0]  # This is the socket we will use to send packets
@@ -337,6 +362,7 @@ class Router:
 
 if __name__ == '__main__':
     parser = ConfigParser()
-    router = Router(parser.router_id, parser.input_ports, parser.outputs, parser.timers)
+    print(parser)
+    # router = Router(parser.router_id, parser.input_ports, parser.outputs, parser.timers)
     # print(router.timeout, router.garbage_collection)
-    router.event_loop()
+    # router.event_loop()
