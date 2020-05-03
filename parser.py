@@ -132,7 +132,6 @@ class ConfigParser:
                 timer_split = self.timer_line.split()
                 if timer_split[0] != 'timers' or len(timer_split) < 4:
                     raise SyntaxError('not enough timers given')
-                print('length', len(timer_split))
                 period = int(timer_split[1].rstrip(','))
                 timeout = int(timer_split[2].rstrip(','))
                 garbage_collection = int(timer_split[3].rstrip(','))
@@ -362,7 +361,7 @@ class Router:
 
 if __name__ == '__main__':
     parser = ConfigParser()
-    print(parser)
-    # router = Router(parser.router_id, parser.input_ports, parser.outputs, parser.timers)
+    # print(parser)
+    router = Router(parser.router_id, parser.input_ports, parser.outputs, parser.timers)
     # print(router.timeout, router.garbage_collection)
-    # router.event_loop()
+    router.event_loop()
