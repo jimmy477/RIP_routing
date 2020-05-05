@@ -52,6 +52,9 @@ class ConfigParser:
         except SyntaxError as err:
             print('CONFIG_FILE ERROR: ' + str(err))
             sys.exit()
+        except FileNotFoundError as err:
+            print('INCORRECT FILENAME: ' + str(err))
+            sys.exit()
 
     def split_ids(self):
         """Checks the router id line is formatted correctly and then returns the router id number"""
@@ -85,6 +88,8 @@ class ConfigParser:
                 if port_number < 1024 or port_number > 640000:
                     raise ValueError('port numbers not in range 1024 - 64000')
                 ports.append(port_number)
+            if len(ports) != len(set(ports)):
+                raise ValueError('duplicate input-ports used')
         except ValueError as err:
             print('CONFIG_FILE_ERROR: ' + str(err))
             sys.exit()
@@ -108,6 +113,15 @@ class ConfigParser:
                 if len(output) != 3:
                     raise SyntaxError('outputs syntax invalid')
                 output = (int(output[0]), int(output[1]), int(output[2]))
+                output_port, metric, neighbour_router = output
+                if output_port in self.input_ports:
+                    raise ValueError('a output given is the same as an input')
+                if output_port < 1024 or output_port > 64000:
+                    raise ValueError('output-port not in range 1024 - 64000')
+                if metric not in range(1, 16):
+                    raise ValueError('metric given not in range 1 - 15')
+                if neighbour_router not in range(1, 64001):
+                    raise ValueError('neighbouring router given not in range 1 - 64000')
                 outputs.append(output)
         except ValueError as err:
             print('CONFIG_FILE ERROR: ' + str(err))
