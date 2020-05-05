@@ -147,8 +147,15 @@ class ConfigParser:
                 period = int(timer_split[1].rstrip(','))
                 timeout = int(timer_split[2].rstrip(','))
                 garbage_collection = int(timer_split[3].rstrip(','))
+                if timeout / period != 6:
+                    raise ValueError('timeout / period ratio should be 6')
+                if garbage_collection / period != 4:
+                    raise ValueError('garbage_collection / period ratio should be 4')
                 return period, timeout, garbage_collection
             except SyntaxError as err:
+                print('CONFIG_FILE ERROR: ' + str(err))
+                sys.exit()
+            except ValueError as err:
                 print('CONFIG_FILE ERROR: ' + str(err))
                 sys.exit()
 
@@ -179,7 +186,6 @@ class Router:
         for input_port in self.input_ports:
             try:
                 input_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                input_socket.setblocking(False)
             except socket.error as err:
                 print(f'Error: {err}')
             try:
@@ -195,8 +201,7 @@ class Router:
             if sender == destination:
                 self.routing_table[destination] = (cost, sender)
                 self.set_timeout(destination)
-            else:
-                pass
+                break
         rip_entries = packet[3:]  # Removes header
         num_rip_entries = len(rip_entries) // 6
         for i in range(num_rip_entries):
@@ -215,10 +220,8 @@ class Router:
                     self.set_timeout(destination)
                     self.send_packet(self.output_udp_socket, True)  # Send triggered update
             else:
-                if metric == 16:  # TODO Check this is the correct thing to do
-                    self.routing_table[destination] = (metric, next_hop)
-                    self.set_timeout(destination)
-                    self.send_packet(self.output_udp_socket, True)  # Send triggered update
+                if metric == 16:  # Ignore the packet
+                    return
                 else:
                     self.routing_table[destination] = (total_metric, next_hop)
                     self.set_timeout(destination)
