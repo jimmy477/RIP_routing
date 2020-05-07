@@ -183,6 +183,7 @@ class Router:
 
     def __repr__(self):
         print('Routing Table')
+        print('Router ID: {}'.format(self.router_id))
         for destination in self.routing_table:
             timeout_running_time = time.time() - self.timers["Timeout " + str(destination)][1]
             if 'Garbage ' + str(destination) in self.timers.keys():
