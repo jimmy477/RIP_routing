@@ -167,6 +167,7 @@ class Router:
         self.router_id = router_id
         self.input_ports = input_ports
         self.outputs = outputs
+        self.neighbouring_routers = ', '.join([str(ids) for _, _, ids in outputs])  # Creates string of neighbouring routers for printing
         self.routing_table = {}
         self.input_udp_sockets = self.create_udp_sockets()
         self.output_udp_socket = self.input_udp_sockets[0]  # This is the socket we will use to send packets
@@ -184,8 +185,16 @@ class Router:
         print('Routing Table')
         for destination in self.routing_table:
             timeout_running_time = time.time() - self.timers["Timeout " + str(destination)][1]
-            print('Destination: {}, Metric: {}, Next hop: {}, Timeout: {:.2f}'
-                  .format(destination, self.routing_table[destination][0], self.routing_table[destination][1], timeout_running_time))
+            if 'Garbage ' + str(destination) in self.timers.keys():
+                garbage_running_time = time.time() - self.timers["Garbage " + str(destination)][1]
+                print('Destination: {}, Metric: {}, Next hop: {}, Timeout: {:.2f}, Garbage collection: {:.2f}'
+                      .format(destination, self.routing_table[destination][0], self.routing_table[destination][1],
+                              timeout_running_time, garbage_running_time))
+            else:
+                garbage_running_time = "not started"
+                print('Destination: {}, Metric: {}, Next hop: {}, Timeout: {:.2f}, Garbage collection: {}'
+                      .format(destination, self.routing_table[destination][0], self.routing_table[destination][1],
+                              timeout_running_time, garbage_running_time))
         print()
 
     def create_udp_sockets(self):
@@ -229,7 +238,7 @@ class Router:
                     self.send_packet(self.output_udp_socket, True)  # Send triggered update
             else:
                 if metric == 16:  # Ignore the packet
-                    return
+                    pass
                 else:
                     self.routing_table[destination] = (total_metric, next_hop)
                     self.set_timeout(destination)
@@ -244,13 +253,13 @@ class Router:
         timeout_thread = threading.Timer(self.timeout, self.timeout_function, args=[destination])
         self.timers["Timeout " + str(destination)] = timeout_thread, time.time()
         timeout_thread.start()
-        # print(f'started timeout at {datetime.now().time()}')
 
     def timeout_function(self, destination):
         """Sets the metric for the destination in the routing table to 16 as the timeout timer has exceeded
         and assumes the route to destination is broken"""
         self.routing_table[destination] = (16, self.routing_table[destination][1])
-        print(f'timeout {self.routing_table}')
+        print('Timeout')
+        self.__repr__()
         garbage_thread = threading.Timer(self.garbage_collection, self.garbage_collection_function, args=[destination])
         self.timers["Garbage " + str(destination)] = garbage_thread, time.time()
         garbage_thread.start()
@@ -259,7 +268,8 @@ class Router:
     def garbage_collection_function(self, destination):
         """Deletes the given destination route from the routing table"""
         del self.routing_table[destination]
-        print(f'garbage {self.routing_table}')
+        print('Garbage collection')
+        self.__repr__()
 
     def unpack_packet(self, socket):
         """Receives a packet from a socket and extracts the contents of a packet received on a input socket and
@@ -274,7 +284,6 @@ class Router:
         if not valid:
             return
         print(f'Received packet from Router {extracted_packet[2]}')
-        self.add_to_table(extracted_packet)
         self.add_to_table(extracted_packet)
 
     def check_packet(self, packet):
@@ -343,9 +352,9 @@ class Router:
             packet = self.create_packet(output_port)
             socket.sendto(packet, (localhost, int(output_port)))
         if triggered:
-            print(f'Sent triggered update packets to {self.outputs}')
+            print(f'Sent triggered update packets to routers {self.neighbouring_routers}')
         else:
-            print(f'Sent update packets to {self.outputs}\n')
+            print(f'Sent update packets to routers {self.neighbouring_routers}\n')
             wait_time = random.uniform(0.8, 1.2) * self.period  # Creates a random wait time around 30secs
             time.sleep(wait_time)
             self.send_packet(socket)
