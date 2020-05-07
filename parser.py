@@ -163,6 +163,8 @@ class ConfigParser:
 class Router:
 
     def __init__(self, router_id, input_ports, outputs, timers):
+        self.start_time = 0
+        self.wait_time = 0
         self.state = 'START'
         self.router_id = router_id
         self.input_ports = input_ports
@@ -272,6 +274,16 @@ class Router:
         print('Garbage collection')
         self.__repr__()
 
+    def triggered_update(self):
+        """Checks if a triggered update is already waiting to send, if it is, don't do anything. Otherwise choose
+        a random wait time after which send a packet to all neighbours"""
+        if 'Triggered' not in self.timers.keys():
+            wait_time = random.uniform(1, 5)  # Random num between 1 and 5
+            current_time = time.time()
+            if wait_time + current_time < self.start_time + self.wait_time:
+                triggered_thread = threading.Timer(wait_time, self.send_packet, args=[self.output_udp_socket, True])
+                self.timers['Triggered'] = triggered_thread
+
     def unpack_packet(self, socket):
         """Receives a packet from a socket and extracts the contents of a packet received on a input socket and
         returns it as a tuple of values """
@@ -353,11 +365,13 @@ class Router:
             packet = self.create_packet(output_port)
             socket.sendto(packet, (localhost, int(output_port)))
         if triggered:
+            del self.timers['Triggered']
             print(f'Sent triggered update packets to routers {self.neighbouring_routers}')
         else:
             print(f'Sent update packets to routers {self.neighbouring_routers}\n')
-            wait_time = random.uniform(0.8, 1.2) * self.period  # Creates a random wait time around 30secs
-            time.sleep(wait_time)
+            self.start_time = time.time()
+            self.wait_time = random.uniform(0.8, 1.2) * self.period  # Creates a random wait time around 30secs
+            time.sleep(self.wait_time)
             self.send_packet(socket)
 
     def close_threads(self):
