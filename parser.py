@@ -238,7 +238,8 @@ class Router:
                 elif metric == 16 and self.routing_table[destination][1] == sender:
                     self.routing_table[destination] = (metric, next_hop)
                     self.set_timeout(destination)
-                    self.send_packet(self.output_udp_socket, True)  # Send triggered update
+                    self.triggered_update()
+                    # self.send_packet(self.output_udp_socket, True)  # Send triggered update
             else:
                 if metric == 16:  # Ignore the packet
                     pass
@@ -266,7 +267,8 @@ class Router:
         garbage_thread = threading.Timer(self.garbage_collection, self.garbage_collection_function, args=[destination])
         self.timers["Garbage " + str(destination)] = garbage_thread, time.time()
         garbage_thread.start()
-        self.send_packet(self.output_udp_socket, True)  # Send triggered update as is unreachable
+        self.triggered_update()
+        # self.send_packet(self.output_udp_socket, True)  # Send triggered update as is unreachable
 
     def garbage_collection_function(self, destination):
         """Deletes the given destination route from the routing table"""
@@ -278,10 +280,12 @@ class Router:
         """Checks if a triggered update is already waiting to send, if it is, don't do anything. Otherwise choose
         a random wait time after which send a packet to all neighbours"""
         if 'Triggered' not in self.timers.keys():
-            wait_time = random.uniform(1, 5)  # Random num between 1 and 5
+            wait_time = 1
+            # wait_time = random.uniform(1, 5)  # Random num between 1 and 5
             current_time = time.time()
             if wait_time + current_time < self.start_time + self.wait_time:
                 triggered_thread = threading.Timer(wait_time, self.send_packet, args=[self.output_udp_socket, True])
+                triggered_thread.start()
                 self.timers['Triggered'] = triggered_thread
 
     def unpack_packet(self, socket):
