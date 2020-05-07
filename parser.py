@@ -180,6 +180,14 @@ class Router:
             self.garbage_collection = timers[2]
         self.timers = {}  # Dictionary used to store timeout and garbage collection timer threads
 
+    def __repr__(self):
+        print('Routing Table')
+        for destination in self.routing_table:
+            timeout_running_time = time.time() - self.timers["Timeout " + str(destination)][1]
+            print('Destination: {}, Metric: {}, Next hop: {}, Timeout: {:.2f}'
+                  .format(destination, self.routing_table[destination][0], self.routing_table[destination][1], timeout_running_time))
+        print()
+
     def create_udp_sockets(self):
         """Returns a list of UDP sockets, one for each input port and bound to each input port"""
         udp_sockets = []
@@ -230,11 +238,11 @@ class Router:
         """Cancels any timeouts already running for the given destination and sets the Timeout timer for the associated
         destination in the routing table and adds it to the timers dictionary of threads"""
         if 'Timeout ' + str(destination) in self.timers.keys():
-            self.timers["Timeout " + str(destination)].cancel()
+            self.timers["Timeout " + str(destination)][0].cancel()
         if 'Garbage ' + str(destination) in self.timers.keys():
-            self.timers["Garbage " + str(destination)].cancel()
+            self.timers["Garbage " + str(destination)][0].cancel()
         timeout_thread = threading.Timer(self.timeout, self.timeout_function, args=[destination])
-        self.timers["Timeout " + str(destination)] = timeout_thread
+        self.timers["Timeout " + str(destination)] = timeout_thread, time.time()
         timeout_thread.start()
         # print(f'started timeout at {datetime.now().time()}')
 
@@ -244,7 +252,7 @@ class Router:
         self.routing_table[destination] = (16, self.routing_table[destination][1])
         print(f'timeout {self.routing_table}')
         garbage_thread = threading.Timer(self.garbage_collection, self.garbage_collection_function, args=[destination])
-        self.timers["Garbage " + str(destination)] = garbage_thread
+        self.timers["Garbage " + str(destination)] = garbage_thread, time.time()
         garbage_thread.start()
         self.send_packet(self.output_udp_socket, True)  # Send triggered update as is unreachable
 
@@ -256,8 +264,7 @@ class Router:
     def unpack_packet(self, socket):
         """Receives a packet from a socket and extracts the contents of a packet received on a input socket and
         returns it as a tuple of values """
-        packet, senders_address = socket.recvfrom(1024)
-        print(f'Received packet from {senders_address[1]}')
+        packet, _ = socket.recvfrom(1024)
         packet = bytes(packet)  # Needed in order to use struct.unpack
         format = 'BBH'  # This is the format for the header
         rip_entries = len(packet) // 20  # This gets the number of rip entries as each entry is 20 bytes
@@ -266,6 +273,8 @@ class Router:
         valid = self.check_packet(extracted_packet)
         if not valid:
             return
+        print(f'Received packet from Router {extracted_packet[2]}')
+        self.add_to_table(extracted_packet)
         self.add_to_table(extracted_packet)
 
     def check_packet(self, packet):
@@ -330,8 +339,6 @@ class Router:
 
     def send_packet(self, socket, triggered=False):
         """Sends an update packet to all neighbours, if triggered is true then only send once"""
-        #TODO Test poisoned reversed is working.
-        #TODO Test triggered update when metric set to 16
         for output_port, _, _ in self.outputs:  # Send a update packet to each connected router
             packet = self.create_packet(output_port)
             socket.sendto(packet, (localhost, int(output_port)))
@@ -345,7 +352,7 @@ class Router:
 
     def close_threads(self):
         """Cancels all running threads"""
-        for thread in self.timers.values():
+        for thread, _ in self.timers.values():
             thread.cancel()
 
     def event_loop(self):
@@ -356,7 +363,7 @@ class Router:
                 for socket in readable:
                     try:
                         self.unpack_packet(socket)
-                        print(f'Routing table: {self.routing_table}')
+                        self.__repr__()
                     except ConnectionResetError as err:
                         print(f'Error receiving packet: {err}')
                 for socket in writable:

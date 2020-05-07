@@ -1,4 +1,4 @@
 router-id 1
 input-ports 1025, 1026, 1027
 outputs 6001-5-6, 7000-8-7, 2000-1-2
-timers 5, 15, 7
+timers 5, 30, 20
