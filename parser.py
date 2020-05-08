@@ -1,8 +1,7 @@
-'''
-Authors:
-James Daniell: 67588399
-Aaron Briggs:  99821272
-'''
+
+#COSC364 First Assignment
+#Authors: James Daniell, ID:67588399 and Aaron Briggs, ID: 99821272 
+#Date: 8/5/2020
 
 import random
 import threading
