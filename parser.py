@@ -1,3 +1,9 @@
+'''
+Authors:
+James Daniell: 67588399
+Aaron Briggs:  99821272
+'''
+
 import random
 import threading
 import select
@@ -5,7 +11,6 @@ import struct
 import sys
 import socket
 import time
-from datetime import datetime
 
 localhost = '127.0.0.1'
 
@@ -165,7 +170,6 @@ class Router:
     def __init__(self, router_id, input_ports, outputs, timers):
         self.start_time = 0
         self.wait_time = 0
-        self.state = 'START'
         self.router_id = router_id
         self.input_ports = input_ports
         self.outputs = outputs
@@ -216,6 +220,7 @@ class Router:
         return udp_sockets
 
     def add_to_table(self, packet):
+        """Updates the routing table with the information supplied in the packet"""
         sender = packet[2]  # router_id of sender
         for _, cost, destination in self.outputs:
             if sender == destination:
@@ -225,7 +230,7 @@ class Router:
         rip_entries = packet[3:]  # Removes header
         num_rip_entries = len(rip_entries) // 6
         for i in range(num_rip_entries):
-            start_entry = i * 6
+            start_entry = i * 6  # Each rip entry has length 6
             rip_entry = rip_entries[start_entry:start_entry + 6]
             destination = rip_entry[2]
             metric = rip_entry[5]
@@ -239,11 +244,8 @@ class Router:
                     self.routing_table[destination] = (metric, next_hop)
                     self.set_timeout(destination)
                     self.triggered_update()
-                    # self.send_packet(self.output_udp_socket, True)  # Send triggered update
             else:
-                if metric == 16:  # Ignore the packet
-                    pass
-                else:
+                if metric != 16:  # Ignore the packet if metric is 16
                     self.routing_table[destination] = (total_metric, next_hop)
                     self.set_timeout(destination)
 
@@ -268,7 +270,6 @@ class Router:
         self.timers["Garbage " + str(destination)] = garbage_thread, time.time()
         garbage_thread.start()
         self.triggered_update()
-        # self.send_packet(self.output_udp_socket, True)  # Send triggered update as is unreachable
 
     def garbage_collection_function(self, destination):
         """Deletes the given destination route from the routing table"""
@@ -280,8 +281,7 @@ class Router:
         """Checks if a triggered update is already waiting to send, if it is, don't do anything. Otherwise choose
         a random wait time after which send a packet to all neighbours"""
         if 'Triggered' not in self.timers.keys():
-            wait_time = 1
-            # wait_time = random.uniform(1, 5)  # Random num between 1 and 5
+            wait_time = random.uniform(1, 5)  # Random num between 1 and 5
             current_time = time.time()
             if wait_time + current_time < self.start_time + self.wait_time:
                 triggered_thread = threading.Timer(wait_time, self.send_packet, args=[self.output_udp_socket, True])
@@ -379,12 +379,16 @@ class Router:
             self.send_packet(socket)
 
     def close_threads(self):
-        """Cancels all running threads"""
+        """Cancels all running threads, used when exiting the program"""
         for thread, _ in self.timers.values():
             thread.cancel()
 
     def event_loop(self):
         try:
+            update_thread = threading.Thread(target=self.send_packet,
+                                             args=[self.output_udp_socket],
+                                             daemon=True)
+            update_thread.start()
             while True:
                 readable, writable, exceptional = select.select(self.input_udp_sockets, [self.output_udp_socket],
                                                                 self.input_udp_sockets)
@@ -394,21 +398,11 @@ class Router:
                         self.__repr__()
                     except ConnectionResetError as err:
                         print(f'Error receiving packet: {err}')
-                for socket in writable:
-                    if self.state == 'START':
-                        update_thread = threading.Thread(target=self.send_packet,
-                                                         args=[socket],
-                                                         daemon=True)
-                        update_thread.start()
-                        self.state = 'NEXT'
         except KeyboardInterrupt:
             self.close_threads()
 
 
-
 if __name__ == '__main__':
     parser = ConfigParser()
-    # print(parser)
     router = Router(parser.router_id, parser.input_ports, parser.outputs, parser.timers)
-    # print(router.timeout, router.garbage_collection)
     router.event_loop()
