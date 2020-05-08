@@ -240,7 +240,8 @@ class Router:
                 if total_metric < self.routing_table[destination][0]:
                     self.routing_table[destination] = (total_metric, next_hop)
                     self.set_timeout(destination)
-                elif metric == 16 and self.routing_table[destination][1] == sender and self.routing_table[destination][0] != 16:
+                elif metric == 16 and self.routing_table[destination][1] == sender and self.routing_table[destination][
+                    0] != 16:
                     self.routing_table[destination] = (metric, next_hop)
                     self.cancel_timeout(destination)
                     self.timeout_function(destination, False)  # starts the garbage timer and sends a triggered update
@@ -265,6 +266,7 @@ class Router:
             self.timers["Timeout " + str(destination)][0].cancel()
         if 'Garbage ' + str(destination) in self.timers.keys():
             self.timers["Garbage " + str(destination)][0].cancel()
+            del self.timers["Garbage " + str(destination)]
         timeout_thread = threading.Timer(self.timeout, self.timeout_function, args=[destination])
         self.timers["Timeout " + str(destination)] = timeout_thread, time.time()
         timeout_thread.start()
@@ -380,7 +382,8 @@ class Router:
             packet = self.create_packet(output_port)
             socket.sendto(packet, (localhost, int(output_port)))
         if triggered:
-            del self.timers['Triggered']
+            if 'Triggered' in self.timers:
+                del self.timers['Triggered']
             print(f'Sent triggered update packets to routers {self.neighbouring_routers}')
         else:
             print(f'Sent update packets to routers {self.neighbouring_routers}\n')
