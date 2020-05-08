@@ -1,3 +1,4 @@
 router-id 4
 input-ports 4000, 4001, 4002
 outputs 7001-6-7, 5000-2-5, 3001-4-3
+timers 5, 30, 20

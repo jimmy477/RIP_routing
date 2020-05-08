@@ -191,13 +191,14 @@ class Router:
         print('Routing Table')
         print('Router ID: {}'.format(self.router_id))
         for destination in self.routing_table:
-            timeout_running_time = time.time() - self.timers["Timeout " + str(destination)][1]
             if 'Garbage ' + str(destination) in self.timers.keys():
                 garbage_running_time = time.time() - self.timers["Garbage " + str(destination)][1]
-                print('Destination: {}, Metric: {}, Next hop: {}, Timeout: {:.2f}, Garbage collection: {:.2f}'
+                timeout_running_time = "exceeded"
+                print('Destination: {}, Metric: {}, Next hop: {}, Timeout: {}, Garbage collection: {:.2f}'
                       .format(destination, self.routing_table[destination][0], self.routing_table[destination][1],
                               timeout_running_time, garbage_running_time))
             else:
+                timeout_running_time = time.time() - self.timers["Timeout " + str(destination)][1]
                 garbage_running_time = "not started"
                 print('Destination: {}, Metric: {}, Next hop: {}, Timeout: {:.2f}, Garbage collection: {}'
                       .format(destination, self.routing_table[destination][0], self.routing_table[destination][1],
@@ -240,14 +241,23 @@ class Router:
                 if total_metric < self.routing_table[destination][0]:
                     self.routing_table[destination] = (total_metric, next_hop)
                     self.set_timeout(destination)
-                elif metric == 16 and self.routing_table[destination][1] == sender:
+                elif metric == 16 and self.routing_table[destination][1] == sender and self.routing_table[destination][0] != 16:
                     self.routing_table[destination] = (metric, next_hop)
+                    self.cancel_timeout(destination)
+                    self.timeout_function(destination, False)  # starts the garbage timer and sends a triggered update
+                elif self.routing_table[destination][1] == sender and self.routing_table[destination][0] != 16:
                     self.set_timeout(destination)
-                    self.triggered_update()
             else:
                 if metric != 16:  # Ignore the packet if metric is 16
                     self.routing_table[destination] = (total_metric, next_hop)
                     self.set_timeout(destination)
+
+    def cancel_timeout(self, destination):
+        if 'Timeout ' + str(destination) in self.timers.keys():
+            self.timers["Timeout " + str(destination)][0].cancel()
+            del self.timers["Timeout " + str(destination)]
+        if 'Garbage ' + str(destination) in self.timers.keys():
+            self.timers["Garbage " + str(destination)][0].cancel()
 
     def set_timeout(self, destination):
         """Cancels any timeouts already running for the given destination and sets the Timeout timer for the associated
@@ -260,12 +270,13 @@ class Router:
         self.timers["Timeout " + str(destination)] = timeout_thread, time.time()
         timeout_thread.start()
 
-    def timeout_function(self, destination):
+    def timeout_function(self, destination, flag=True):
         """Sets the metric for the destination in the routing table to 16 as the timeout timer has exceeded
-        and assumes the route to destination is broken"""
+        and assumes the route to destination is broken. If flag is false, we do not print the table"""
         self.routing_table[destination] = (16, self.routing_table[destination][1])
-        print('Timeout')
-        self.__repr__()
+        if flag:
+            print('Timeout')
+            self.__repr__()
         garbage_thread = threading.Timer(self.garbage_collection, self.garbage_collection_function, args=[destination])
         self.timers["Garbage " + str(destination)] = garbage_thread, time.time()
         garbage_thread.start()
@@ -274,6 +285,7 @@ class Router:
     def garbage_collection_function(self, destination):
         """Deletes the given destination route from the routing table"""
         del self.routing_table[destination]
+        del self.timers["Garbage " + str(destination)]
         print('Garbage collection')
         self.__repr__()
 

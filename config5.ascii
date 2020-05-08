@@ -1,3 +1,4 @@
 router-id 5
 input-ports 5000, 5001
 outputs 4001-2-4, 6000-1-6
+timers 5, 30, 20

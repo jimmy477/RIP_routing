@@ -1,3 +1,4 @@
 router-id 7
 input-ports 7000, 7001
 outputs 1026-8-1, 4002-6-4
+timers 5, 30, 20
